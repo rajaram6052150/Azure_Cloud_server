@@ -136,6 +136,36 @@ class FedAvgCustom(FedAvg):
         print(f"✗ Clients failed: {len(failures)}")
 
         # =================================================
+        # CLIENT TRAIN METRICS
+        # =================================================
+
+        print("\n[CLIENT TRAIN METRICS]")
+
+        for idx, (client_proxy, fit_res) in enumerate(results):
+
+            client_id = idx + 1
+
+            print(f"\nClient {client_id}")
+
+            if fit_res.metrics:
+
+                for key, value in fit_res.metrics.items():
+
+                    print(f"{key}: {value:.4f}")
+
+                    try:
+
+                        mlflow.log_metric(
+                            f"client_{client_id}_train_{key}",
+                            float(value),
+                            step=server_round
+                        )
+
+                    except Exception as e:
+
+                        print(f"[MLFLOW ERROR] {e}")
+
+        # =================================================
         # FLOWER AGGREGATION
         # =================================================
 
@@ -158,12 +188,12 @@ class FedAvgCustom(FedAvg):
         )
 
         # =================================================
-        # TRAIN METRICS
+        # GLOBAL TRAIN METRICS
         # =================================================
 
         if aggregated_metrics:
 
-            print("\n[TRAIN METRICS]")
+            print("\n[GLOBAL TRAIN METRICS]")
 
             for key, value in aggregated_metrics.items():
 
@@ -172,7 +202,7 @@ class FedAvgCustom(FedAvg):
                 try:
 
                     mlflow.log_metric(
-                        f"train_{key}",
+                        f"global_train_{key}",
                         value,
                         step=server_round
                     )
@@ -201,6 +231,68 @@ class FedAvgCustom(FedAvg):
         failures,
     ):
 
+        print("\n[EVALUATION]")
+
+        print(f"Clients evaluated: {len(results)}")
+
+        print(f"Failures: {len(failures)}")
+
+        # =================================================
+        # CLIENT EVALUATION METRICS
+        # =================================================
+
+        print("\n[CLIENT EVALUATION METRICS]")
+
+        for idx, (client_proxy, eval_res) in enumerate(results):
+
+            client_id = idx + 1
+
+            print(f"\nClient {client_id}")
+
+            # =============================================
+            # CLIENT LOSS
+            # =============================================
+
+            print(f"loss: {eval_res.loss:.4f}")
+
+            try:
+
+                mlflow.log_metric(
+                    f"client_{client_id}_eval_loss",
+                    float(eval_res.loss),
+                    step=server_round
+                )
+
+            except Exception as e:
+
+                print(f"[MLFLOW ERROR] {e}")
+
+            # =============================================
+            # CLIENT OTHER METRICS
+            # =============================================
+
+            if eval_res.metrics:
+
+                for key, value in eval_res.metrics.items():
+
+                    print(f"{key}: {value:.4f}")
+
+                    try:
+
+                        mlflow.log_metric(
+                            f"client_{client_id}_{key}",
+                            float(value),
+                            step=server_round
+                        )
+
+                    except Exception as e:
+
+                        print(f"[MLFLOW ERROR] {e}")
+
+        # =================================================
+        # FLOWER GLOBAL AGGREGATION
+        # =================================================
+
         aggregated_loss, aggregated_metrics = (
             super().aggregate_evaluate(
                 server_round,
@@ -209,14 +301,8 @@ class FedAvgCustom(FedAvg):
             )
         )
 
-        print("\n[EVALUATION]")
-
-        print(f"Clients evaluated: {len(results)}")
-
-        print(f"Failures: {len(failures)}")
-
         # =================================================
-        # LOSS
+        # GLOBAL LOSS
         # =================================================
 
         if aggregated_loss is not None:
@@ -241,7 +327,7 @@ class FedAvgCustom(FedAvg):
                 )
 
         # =================================================
-        # METRICS
+        # GLOBAL METRICS
         # =================================================
 
         if aggregated_metrics:
@@ -255,7 +341,7 @@ class FedAvgCustom(FedAvg):
                 try:
 
                     mlflow.log_metric(
-                        key,
+                        f"global_{key}",
                         value,
                         step=server_round
                     )
