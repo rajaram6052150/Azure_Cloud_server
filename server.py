@@ -1,15 +1,16 @@
-"""
-server.py
-=========
-Federated Learning Server
-Flower + Azure MLflow + Lazy Model Saving
-"""
+import os
+
+# =========================================================
+# FIX PYTORCH / OPENMP HANGS ON LINUX VM
+# =========================================================
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 print("1 - Starting imports")
 
-import os
-
-print("2 - os imported")
+print("2 - os configured")
 
 from typing import List, Tuple
 
