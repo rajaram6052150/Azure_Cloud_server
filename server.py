@@ -1,9 +1,14 @@
 """
 server.py
 =========
-Federated Learning Server with MLflow Tracking
-Coordinates training across Client A and Client B using Flower Framework
-Aggregates model updates using FedAvg algorithm
+Federated Learning Server with Azure MLflow Tracking
+
+Features:
+- Flower Federated Learning Server
+- FedAvg aggregation
+- Azure MLflow experiment tracking
+- Global model checkpoint saving
+- Federated metrics aggregation
 """
 
 import os
@@ -14,28 +19,54 @@ from flwr.server.strategy import FedAvg
 
 import mlflow
 
+from azure.ai.ml import MLClient
+from azure.identity import DefaultAzureCredential
+
 from save_model import save_global_model
 
 
 # =========================================================
-# CONFIGURATION
+# AZURE ML CONFIG
 # =========================================================
 
-INPUT_SIZE = 10
+SUBSCRIPTION_ID = "0746f4dd-3e9d-4b6c-be49-bdcd4149395f"
+
+RESOURCE_GROUP = "flower-rg"
+
+WORKSPACE_NAME = "flower-wsp"
+
+
+# =========================================================
+# FEDERATED CONFIG
+# =========================================================
+
+SERVER_ADDRESS = "0.0.0.0:8080"
 
 NUM_ROUNDS = 5
 
+MIN_CLIENTS = 2
+
+INPUT_SIZE = 10
+
 
 # =========================================================
-# METRIC AGGREGATION FUNCTION
+# METRIC AGGREGATION
 # =========================================================
 
 def weighted_average(metrics):
     """
-    Aggregate metrics from multiple clients using weighted average.
+    Compute weighted average of client metrics.
     """
 
     if not metrics:
+        return {}
+
+    total_examples = sum(
+        num_examples
+        for num_examples, _ in metrics
+    )
+
+    if total_examples == 0:
         return {}
 
     aggregated = {}
@@ -50,16 +81,13 @@ def weighted_average(metrics):
     for key in metric_keys:
 
         weighted_sum = sum(
-            num_examples * m.get(key, 0)
-            for num_examples, m in metrics
+            num_examples * metric_dict.get(key, 0.0)
+            for num_examples, metric_dict in metrics
         )
 
-        total_examples = sum(
-            num_examples
-            for num_examples, _ in metrics
+        aggregated[key] = (
+            weighted_sum / total_examples
         )
-
-        aggregated[key] = weighted_sum / total_examples
 
     return aggregated
 
@@ -69,19 +97,9 @@ def weighted_average(metrics):
 # =========================================================
 
 class FedAvgCustom(FedAvg):
-    """
-    Custom FedAvg Strategy with:
-    - Detailed logging
-    - Global model saving
-    - MLflow tracking
-    """
-
-    def __init__(self, *args, **kwargs):
-
-        super().__init__(*args, **kwargs)
 
     # =====================================================
-    # AGGREGATE TRAINING
+    # AGGREGATE FIT
     # =====================================================
 
     def aggregate_fit(
@@ -102,26 +120,15 @@ class FedAvgCustom(FedAvg):
         print(f"✗ Clients failed: {len(failures)}")
 
         # -------------------------------------------------
-        # PRINT FAILURES
+        # FLOWER DEFAULT AGGREGATION
         # -------------------------------------------------
 
-        if failures:
-
-            print("\n[FAILURES]")
-
-            for client_id, error in failures:
-
-                print(f"Client {client_id}: {error}")
-
-        # -------------------------------------------------
-        # FEDAVG AGGREGATION
-        # -------------------------------------------------
-
-        aggregated_parameters, aggregated_metrics = super().aggregate_fit(
-            server_round,
-            results,
-            failures
-        )
+        aggregated_parameters, aggregated_metrics = \
+            super().aggregate_fit(
+                server_round,
+                results,
+                failures
+            )
 
         # -------------------------------------------------
         # SAVE GLOBAL MODEL
@@ -136,7 +143,7 @@ class FedAvgCustom(FedAvg):
             )
 
         # -------------------------------------------------
-        # LOG TRAINING METRICS TO MLFLOW
+        # LOG TRAIN METRICS
         # -------------------------------------------------
 
         if aggregated_metrics:
@@ -155,7 +162,10 @@ class FedAvgCustom(FedAvg):
 
         print("=" * 70)
 
-        return aggregated_parameters, aggregated_metrics
+        return (
+            aggregated_parameters,
+            aggregated_metrics
+        )
 
     # =====================================================
     # AGGREGATE EVALUATION
@@ -172,23 +182,25 @@ class FedAvgCustom(FedAvg):
 
         print(f"Clients evaluated: {len(results)}")
 
-        if failures:
+        print(f"Failures: {len(failures)}")
 
-            print(f"Clients failed: {len(failures)}")
-
-        aggregated_loss, aggregated_metrics = super().aggregate_evaluate(
-            server_round,
-            results,
-            failures
-        )
+        aggregated_loss, aggregated_metrics = \
+            super().aggregate_evaluate(
+                server_round,
+                results,
+                failures
+            )
 
         # -------------------------------------------------
-        # LOG LOSS
+        # LOG GLOBAL LOSS
         # -------------------------------------------------
 
         if aggregated_loss is not None:
 
-            print(f"\nGlobal Loss: {aggregated_loss:.4f}")
+            print(
+                f"\nGlobal Loss: "
+                f"{aggregated_loss:.4f}"
+            )
 
             mlflow.log_metric(
                 "global_loss",
@@ -197,7 +209,7 @@ class FedAvgCustom(FedAvg):
             )
 
         # -------------------------------------------------
-        # LOG METRICS
+        # LOG EVALUATION METRICS
         # -------------------------------------------------
 
         if aggregated_metrics:
@@ -214,54 +226,106 @@ class FedAvgCustom(FedAvg):
                     step=server_round
                 )
 
-        return aggregated_loss, aggregated_metrics
+        return (
+            aggregated_loss,
+            aggregated_metrics
+        )
 
 
 # =========================================================
-# MAIN SERVER FUNCTION
+# MAIN SERVER
 # =========================================================
 
 def main():
 
     print("\n" + "=" * 70)
 
-    print("FEDERATED LEARNING SERVER WITH MLFLOW")
+    print("FEDERATED LEARNING SERVER")
+
+    print("Azure ML + MLflow + Flower")
 
     print("=" * 70)
 
     print("\n[CONFIGURATION]")
 
-    print(f"Server Address      : 0.0.0.0:8080")
+    print(f"Server Address : {SERVER_ADDRESS}")
 
-    print(f"Federated Rounds    : {NUM_ROUNDS}")
+    print(f"Federated Rounds : {NUM_ROUNDS}")
 
-    print(f"Minimum Clients     : 2")
+    print(f"Minimum Clients : {MIN_CLIENTS}")
 
-    print(f"Input Feature Size  : {INPUT_SIZE}")
-
-    print(f"Model Architecture  : ModelA")
+    print(f"Input Size : {INPUT_SIZE}")
 
     print("=" * 70)
 
     # =====================================================
-    # MLFLOW SETUP
+    # CONNECT TO AZURE ML
     # =====================================================
 
-    print("\n[MLFLOW] Initializing experiment tracking...")
+    print("\n[AZURE ML] Connecting...")
+
+    credential = DefaultAzureCredential()
+
+    ml_client = MLClient(
+        credential=credential,
+        subscription_id=SUBSCRIPTION_ID,
+        resource_group_name=RESOURCE_GROUP,
+        workspace_name=WORKSPACE_NAME,
+    )
+
+    print("[AZURE ML] Connected successfully!")
+
+    # =====================================================
+    # CONFIGURE AZURE MLFLOW
+    # =====================================================
+
+    tracking_uri = ml_client.workspaces.get(
+        WORKSPACE_NAME
+    ).mlflow_tracking_uri
+
+    mlflow.set_tracking_uri(
+        tracking_uri
+    )
+
+    print(f"\n[MLFLOW] Tracking URI:")
+
+    print(tracking_uri)
+
+    # =====================================================
+    # CREATE / SET EXPERIMENT
+    # =====================================================
+
+    EXPERIMENT_NAME = "Federated-Churn-Training"
 
     mlflow.set_experiment(
-        "Federated-Churn-Training"
+        EXPERIMENT_NAME
     )
+
+    print(
+        f"\n[MLFLOW] Experiment:"
+        f" {EXPERIMENT_NAME}"
+    )
+
+    # =====================================================
+    # START MLFLOW RUN
+    # =====================================================
 
     mlflow.start_run()
 
-    # -----------------------------------------------------
+    print("[MLFLOW] Run started!")
+
+    # =====================================================
     # LOG PARAMETERS
-    # -----------------------------------------------------
+    # =====================================================
 
     mlflow.log_param(
         "num_rounds",
         NUM_ROUNDS
+    )
+
+    mlflow.log_param(
+        "min_clients",
+        MIN_CLIENTS
     )
 
     mlflow.log_param(
@@ -270,29 +334,22 @@ def main():
     )
 
     mlflow.log_param(
-        "min_clients",
-        2
-    )
-
-    mlflow.log_param(
         "model",
         "ModelA"
     )
 
     mlflow.log_param(
-        "optimizer",
-        "Adam"
-    )
-
-    mlflow.log_param(
-        "federated_strategy",
+        "strategy",
         "FedAvg"
     )
 
-    print("[MLFLOW] Tracking started!")
+    mlflow.log_param(
+        "framework",
+        "Flower"
+    )
 
     # =====================================================
-    # FEDERATED STRATEGY
+    # FEDAVG STRATEGY
     # =====================================================
 
     strategy = FedAvgCustom(
@@ -301,11 +358,11 @@ def main():
 
         fraction_evaluate=1.0,
 
-        min_fit_clients=2,
+        min_fit_clients=MIN_CLIENTS,
 
-        min_evaluate_clients=2,
+        min_evaluate_clients=MIN_CLIENTS,
 
-        min_available_clients=2,
+        min_available_clients=MIN_CLIENTS,
 
         fit_metrics_aggregation_fn=weighted_average,
 
@@ -313,7 +370,7 @@ def main():
     )
 
     # =====================================================
-    # SERVER CONFIG
+    # FLOWER SERVER CONFIG
     # =====================================================
 
     config = fl.server.ServerConfig(
@@ -321,7 +378,7 @@ def main():
     )
 
     # =====================================================
-    # START FLOWER SERVER
+    # START SERVER
     # =====================================================
 
     try:
@@ -330,7 +387,7 @@ def main():
 
         fl.server.start_server(
 
-            server_address="0.0.0.0:8080",
+            server_address=SERVER_ADDRESS,
 
             config=config,
 
@@ -341,11 +398,11 @@ def main():
 
     except KeyboardInterrupt:
 
-        print("\n[SERVER] Interrupted by user")
+        print("\n[SERVER] Interrupted manually")
 
     except Exception as e:
 
-        print(f"\n[ERROR] {type(e).__name__}: {e}")
+        print(f"\n[ERROR] {e}")
 
         import traceback
 
@@ -354,34 +411,38 @@ def main():
     finally:
 
         # =================================================
-        # SAVE FINAL MODEL TO MLFLOW
+        # LOG FINAL MODEL
         # =================================================
 
-        final_model_path = "models/final_model.pth"
+        final_model_path = (
+            "models/final_model.pth"
+        )
 
         if os.path.exists(final_model_path):
 
-            print("\n[MLFLOW] Uploading final model artifact...")
+            print(
+                "\n[MLFLOW] Uploading final model..."
+            )
 
-            mlflow.log_artifact(final_model_path)
+            mlflow.log_artifact(
+                final_model_path
+            )
 
         # =================================================
-        # END MLFLOW RUN
+        # END RUN
         # =================================================
 
         mlflow.end_run()
 
-        print("\n[MLFLOW] Run closed successfully")
+        print(
+            "\n[MLFLOW] Run closed successfully"
+        )
 
     print("\n" + "=" * 70)
 
     print("FEDERATED LEARNING COMPLETED!")
 
-    print(f"Final model saved at: {final_model_path}")
-
-    print("MLflow experiment logged successfully!")
-
-    print("=" * 70 + "\n")
+    print("=" * 70)
 
 
 # =========================================================
