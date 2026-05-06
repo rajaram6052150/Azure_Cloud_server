@@ -4,16 +4,14 @@ save_model.py
 Utility functions for:
 - Saving aggregated federated global model
 - Loading saved checkpoints
+
+Optimized to avoid PyTorch import hangs on Linux VMs.
 """
 
-import os
 from collections import OrderedDict
-
-import torch
+import os
 
 from flwr.common import parameters_to_ndarrays
-
-from model import ModelA
 
 
 # =========================================================
@@ -27,8 +25,8 @@ def save_global_model(
     output_dir: str = "models",
 ):
     """
-    Convert Flower aggregated parameters into a
-    PyTorch ModelA checkpoint.
+    Convert Flower aggregated parameters into
+    a PyTorch ModelA checkpoint.
 
     Args:
         parameters:
@@ -44,17 +42,39 @@ def save_global_model(
             Directory to save checkpoints
     """
 
-    print("\n[SAVE_MODEL] Creating output directory...")
+    print("\n[SAVE_MODEL] Starting model save...")
+
+    # =====================================================
+    # LAZY IMPORTS
+    # =====================================================
+
+    print("[SAVE_MODEL] Importing torch...")
+
+    import torch
+
+    print("[SAVE_MODEL] Torch imported!")
+
+    print("[SAVE_MODEL] Importing ModelA...")
+
+    from model import ModelA
+
+    print("[SAVE_MODEL] ModelA imported!")
+
+    # =====================================================
+    # CREATE DIRECTORY
+    # =====================================================
+
+    print("[SAVE_MODEL] Creating output directory...")
 
     os.makedirs(output_dir, exist_ok=True)
 
     print("[SAVE_MODEL] Output directory ready!")
 
     # =====================================================
-    # CONVERT FLOWER PARAMETERS
+    # CONVERT PARAMETERS
     # =====================================================
 
-    print("[SAVE_MODEL] Converting parameters...")
+    print("[SAVE_MODEL] Converting Flower parameters...")
 
     ndarrays = parameters_to_ndarrays(
         parameters
@@ -83,7 +103,7 @@ def save_global_model(
     # MAP PARAMETERS
     # =====================================================
 
-    print("[SAVE_MODEL] Mapping tensors...")
+    print("[SAVE_MODEL] Mapping parameters...")
 
     params_dict = zip(
         model.state_dict().keys(),
@@ -194,6 +214,16 @@ def load_model(
     """
 
     print("\n[LOAD_MODEL] Loading model...")
+
+    # =====================================================
+    # LAZY IMPORTS
+    # =====================================================
+
+    import torch
+
+    from model import ModelA
+
+    print("[LOAD_MODEL] Imports successful!")
 
     if hidden_dims is None:
 
