@@ -15,7 +15,7 @@ from model import ModelA
 
 
 # =========================================================
-# CONFIG
+# CONFIGURATION
 # =========================================================
 
 INPUT_SIZE = 10
@@ -23,6 +23,7 @@ INPUT_SIZE = 10
 HIDDEN_DIMS = [64, 32]
 
 DROPOUT = 0.3
+
 
 # =========================================================
 # AZURE MODEL PATH
@@ -39,6 +40,7 @@ MODEL_PATH = os.path.join(
 
 print(f"Resolved MODEL_PATH: {MODEL_PATH}")
 
+
 # =========================================================
 # LOGGING
 # =========================================================
@@ -46,6 +48,7 @@ print(f"Resolved MODEL_PATH: {MODEL_PATH}")
 logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
+
 
 # =========================================================
 # GLOBAL MODEL
@@ -55,7 +58,7 @@ model = None
 
 
 # =========================================================
-# INIT
+# INITIALIZE MODEL
 # =========================================================
 
 def init():
@@ -101,10 +104,22 @@ def init():
             strict=True
         )
 
+        # =================================================
+        # EVAL MODE
+        # =================================================
+
         model.eval()
 
         logger.info(
             "✓ Model loaded successfully!"
+        )
+
+        logger.info(
+            f"Input Size: {INPUT_SIZE}"
+        )
+
+        logger.info(
+            f"Hidden Dims: {HIDDEN_DIMS}"
         )
 
     except Exception as e:
@@ -117,7 +132,7 @@ def init():
 
 
 # =========================================================
-# RUN INFERENCE
+# INFERENCE
 # =========================================================
 
 def run(raw_data):
@@ -125,14 +140,19 @@ def run(raw_data):
     try:
 
         # =================================================
-        # PARSE JSON
+        # PARSE REQUEST
         # =================================================
 
         data = json.loads(raw_data)
 
+        # =================================================
+        # VALIDATE INPUT
+        # =================================================
+
         if "features" not in data:
 
             return {
+
                 "error": (
                     "Missing 'features' field"
                 )
@@ -141,7 +161,7 @@ def run(raw_data):
         features = data["features"]
 
         # =================================================
-        # VALIDATE INPUT SIZE
+        # VALIDATE FEATURE SIZE
         # =================================================
 
         if len(features) != INPUT_SIZE:
@@ -158,7 +178,7 @@ def run(raw_data):
             }
 
         # =================================================
-        # CONVERT TO NUMPY
+        # TO NUMPY
         # =================================================
 
         features_array = np.array(
@@ -197,6 +217,7 @@ def run(raw_data):
                 features_tensor
             )
 
+            # Model already applies sigmoid
             probability = output.item()
 
         # =================================================
@@ -223,6 +244,10 @@ def run(raw_data):
             f"Probability={probability:.4f}"
         )
 
+        # =================================================
+        # RESPONSE
+        # =================================================
+
         return {
 
             "prediction": int(prediction),
@@ -234,8 +259,12 @@ def run(raw_data):
 
     except json.JSONDecodeError:
 
+        logger.error(
+            "Invalid JSON received"
+        )
+
         return {
-            "error": "Invalid JSON"
+            "error": "Invalid JSON format"
         }
 
     except Exception as e:
@@ -247,3 +276,4 @@ def run(raw_data):
         return {
             "error": str(e)
         }
+    

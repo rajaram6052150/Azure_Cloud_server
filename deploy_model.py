@@ -2,7 +2,6 @@
 deploy_model.py
 ===============
 Azure ML Deployment for Federated Learning ModelA
-Creates managed online endpoint and deployment
 """
 
 from azure.ai.ml import MLClient
@@ -166,6 +165,8 @@ def create_environment(
         f" {env.name}"
     )
 
+    print(f"  Version: {env.version}")
+
     print(f"  Image: {env.image}\n")
 
     return env
@@ -177,6 +178,7 @@ def create_environment(
 
 def create_deployment(
     ml_client,
+    env_version,
 ):
 
     print("Creating/Updating deployment...")
@@ -186,6 +188,8 @@ def create_deployment(
     print(f"Code Path: {CODE_PATH}")
 
     print(f"Scoring Script: {SCORING_SCRIPT}")
+
+    print(f"Environment Version: {env_version}")
 
     if not os.path.exists(CODE_PATH):
 
@@ -201,7 +205,15 @@ def create_deployment(
 
         model=f"azureml:{MODEL_NAME}:{MODEL_VERSION}",
 
-        environment=f"azureml:{ENVIRONMENT_NAME}@latest",
+        # =================================================
+        # IMPORTANT FIX
+        # =================================================
+
+        environment=(
+            f"azureml:"
+            f"{ENVIRONMENT_NAME}:"
+            f"{env_version}"
+        ),
 
         code_configuration=CodeConfiguration(
 
@@ -297,12 +309,15 @@ def deploy():
         ml_client
     )
 
+    env_version = env.version
+
     # =====================================================
     # DEPLOYMENT
     # =====================================================
 
     deployment = create_deployment(
-        ml_client
+        ml_client,
+        env_version
     )
 
     # =====================================================
@@ -375,3 +390,4 @@ if __name__ == "__main__":
         import traceback
 
         traceback.print_exc()
+        
