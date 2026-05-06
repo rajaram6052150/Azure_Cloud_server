@@ -1,17 +1,40 @@
-"""
-save_model.py
-=============
-Utility functions for:
-- Saving aggregated federated global model
-- Loading saved checkpoints
-
-Optimized to avoid PyTorch import hangs on Linux VMs.
-"""
-
-from collections import OrderedDict
 import os
 
+# =========================================================
+# FIX PYTORCH / OPENMP HANGS
+# =========================================================
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+print("1 - Starting imports")
+
+# =========================================================
+# IMPORT TORCH EARLY
+# =========================================================
+
+print("2 - importing torch...")
+
+import torch
+
+print("3 - torch imported successfully")
+
+# =========================================================
+# NORMAL IMPORTS
+# =========================================================
+
+from collections import OrderedDict
+
+print("4 - collections imported")
+
 from flwr.common import parameters_to_ndarrays
+
+print("5 - flower common imported")
+
+from model import ModelA
+
+print("6 - ModelA imported")
 
 
 # =========================================================
@@ -25,56 +48,24 @@ def save_global_model(
     output_dir: str = "models",
 ):
     """
-    Convert Flower aggregated parameters into
-    a PyTorch ModelA checkpoint.
-
-    Args:
-        parameters:
-            Flower aggregated parameters
-
-        round_num:
-            Current federated round number
-
-        input_size:
-            Number of input features
-
-        output_dir:
-            Directory to save checkpoints
+    Save aggregated federated model.
     """
 
-    print("\n[SAVE_MODEL] Starting model save...")
-
-    # =====================================================
-    # LAZY IMPORTS
-    # =====================================================
-
-    print("[SAVE_MODEL] Importing torch...")
-
-    import torch
-
-    print("[SAVE_MODEL] Torch imported!")
-
-    print("[SAVE_MODEL] Importing ModelA...")
-
-    from model import ModelA
-
-    print("[SAVE_MODEL] ModelA imported!")
+    print("\n[SAVE_MODEL] Starting save...")
 
     # =====================================================
     # CREATE DIRECTORY
     # =====================================================
 
-    print("[SAVE_MODEL] Creating output directory...")
-
     os.makedirs(output_dir, exist_ok=True)
 
-    print("[SAVE_MODEL] Output directory ready!")
+    print("[SAVE_MODEL] Output directory ready")
 
     # =====================================================
-    # CONVERT PARAMETERS
+    # CONVERT FLOWER PARAMETERS
     # =====================================================
 
-    print("[SAVE_MODEL] Converting Flower parameters...")
+    print("[SAVE_MODEL] Converting parameters...")
 
     ndarrays = parameters_to_ndarrays(
         parameters
@@ -82,7 +73,7 @@ def save_global_model(
 
     print(
         f"[SAVE_MODEL] "
-        f"{len(ndarrays)} tensors received!"
+        f"{len(ndarrays)} tensors received"
     )
 
     # =====================================================
@@ -97,13 +88,13 @@ def save_global_model(
         dropout=0.3
     )
 
-    print("[SAVE_MODEL] Model initialized!")
+    print("[SAVE_MODEL] Model initialized")
 
     # =====================================================
     # MAP PARAMETERS
     # =====================================================
 
-    print("[SAVE_MODEL] Mapping parameters...")
+    print("[SAVE_MODEL] Mapping tensors...")
 
     params_dict = zip(
         model.state_dict().keys(),
@@ -117,7 +108,7 @@ def save_global_model(
         for key, value in params_dict
     })
 
-    print("[SAVE_MODEL] State dict created!")
+    print("[SAVE_MODEL] State dict created")
 
     # =====================================================
     # LOAD WEIGHTS
@@ -130,10 +121,10 @@ def save_global_model(
         strict=True
     )
 
-    print("[SAVE_MODEL] Weights loaded!")
+    print("[SAVE_MODEL] Weights loaded")
 
     # =====================================================
-    # SAVE ROUND CHECKPOINT
+    # SAVE ROUND MODEL
     # =====================================================
 
     round_model_path = os.path.join(
@@ -195,35 +186,9 @@ def load_model(
 ):
     """
     Load ModelA checkpoint.
-
-    Args:
-        model_path:
-            Path to .pth file
-
-        input_size:
-            Number of input features
-
-        hidden_dims:
-            Hidden layer sizes
-
-        dropout:
-            Dropout probability
-
-    Returns:
-        Loaded ModelA instance
     """
 
     print("\n[LOAD_MODEL] Loading model...")
-
-    # =====================================================
-    # LAZY IMPORTS
-    # =====================================================
-
-    import torch
-
-    from model import ModelA
-
-    print("[LOAD_MODEL] Imports successful!")
 
     if hidden_dims is None:
 
@@ -239,7 +204,7 @@ def load_model(
         dropout=dropout
     )
 
-    print("[LOAD_MODEL] Model initialized!")
+    print("[LOAD_MODEL] Model initialized")
 
     # =====================================================
     # LOAD STATE DICT
@@ -255,7 +220,7 @@ def load_model(
         map_location="cpu"
     )
 
-    print("[LOAD_MODEL] State dict loaded!")
+    print("[LOAD_MODEL] State dict loaded")
 
     model.load_state_dict(
         state_dict,
