@@ -1,191 +1,393 @@
 """
 server.py
 =========
-Federated Learning Server
+Federated Learning Server with MLflow Tracking
 Coordinates training across Client A and Client B using Flower Framework
 Aggregates model updates using FedAvg algorithm
 """
 
+import os
+from typing import List, Tuple
+
 import flwr as fl
 from flwr.server.strategy import FedAvg
-from typing import List, Tuple
-import os
+
+import mlflow
 
 from save_model import save_global_model
 
 
-# IMPORTANT: Update this based on your actual dataset features
-# Calculate INPUT_SIZE by running preprocessing on your data first:
-# python -c "from utils import get_input_size; print(get_input_size('FL/data/client_A.csv'))"
-INPUT_SIZE = 10  # Updated based on feature dimension after preprocessing
+# =========================================================
+# CONFIGURATION
+# =========================================================
 
+INPUT_SIZE = 10
+
+NUM_ROUNDS = 5
+
+
+# =========================================================
+# METRIC AGGREGATION FUNCTION
+# =========================================================
+
+def weighted_average(metrics):
+    """
+    Aggregate metrics from multiple clients using weighted average.
+    """
+
+    if not metrics:
+        return {}
+
+    aggregated = {}
+
+    first_metrics = metrics[0][1]
+
+    if not first_metrics:
+        return {}
+
+    metric_keys = first_metrics.keys()
+
+    for key in metric_keys:
+
+        weighted_sum = sum(
+            num_examples * m.get(key, 0)
+            for num_examples, m in metrics
+        )
+
+        total_examples = sum(
+            num_examples
+            for num_examples, _ in metrics
+        )
+
+        aggregated[key] = weighted_sum / total_examples
+
+    return aggregated
+
+
+# =========================================================
+# CUSTOM FEDAVG STRATEGY
+# =========================================================
 
 class FedAvgCustom(FedAvg):
     """
-    Custom FedAvg strategy with detailed logging
+    Custom FedAvg Strategy with:
+    - Detailed logging
+    - Global model saving
+    - MLflow tracking
     """
-    
+
     def __init__(self, *args, **kwargs):
+
         super().__init__(*args, **kwargs)
-        self.round_num = 0
-    
+
+    # =====================================================
+    # AGGREGATE TRAINING
+    # =====================================================
+
     def aggregate_fit(
         self,
         server_round: int,
         results: List[Tuple],
         failures: List[Tuple],
     ):
-        """
-        Aggregate model weights using FedAvg and save global model after each round.
-        
-        Args:
-            server_round: Current round number
-            results: List of (client_id, fit_res) tuples from successful clients
-            failures: List of (client_id, error) tuples from failed clients
-        
-        Returns:
-            Tuple of (aggregated_parameters, aggregated_metrics)
-        """
-        
-        print(f"\n{'=' * 70}")
-        print(f"Federated Round {server_round}")
-        print(f"{'=' * 70}")
-        
+
+        print("\n" + "=" * 70)
+
+        print(f"FEDERATED ROUND {server_round}")
+
+        print("=" * 70)
+
         print(f"✓ Clients completed: {len(results)}")
+
         print(f"✗ Clients failed: {len(failures)}")
-        
-        # Print failures if any
+
+        # -------------------------------------------------
+        # PRINT FAILURES
+        # -------------------------------------------------
+
         if failures:
+
             print("\n[FAILURES]")
+
             for client_id, error in failures:
-                print(f"  Client {client_id}: {error}")
-        
-        # Perform FedAvg aggregation
+
+                print(f"Client {client_id}: {error}")
+
+        # -------------------------------------------------
+        # FEDAVG AGGREGATION
+        # -------------------------------------------------
+
         aggregated_parameters, aggregated_metrics = super().aggregate_fit(
             server_round,
             results,
             failures
         )
-        
-        # Save aggregated global model
+
+        # -------------------------------------------------
+        # SAVE GLOBAL MODEL
+        # -------------------------------------------------
+
         if aggregated_parameters is not None:
+
             save_global_model(
                 parameters=aggregated_parameters,
                 round_num=server_round,
-                input_size=INPUT_SIZE
+                input_dim=INPUT_SIZE
             )
-        
-        # Print metrics if available
+
+        # -------------------------------------------------
+        # LOG TRAINING METRICS TO MLFLOW
+        # -------------------------------------------------
+
         if aggregated_metrics:
-            print(f"\n[AGGREGATED METRICS]")
+
+            print("\n[TRAIN METRICS]")
+
             for key, value in aggregated_metrics.items():
-                print(f"  {key}: {value}")
-        
-        print(f"{'=' * 70}\n")
-        
+
+                print(f"{key}: {value:.4f}")
+
+                mlflow.log_metric(
+                    f"train_{key}",
+                    value,
+                    step=server_round
+                )
+
+        print("=" * 70)
+
         return aggregated_parameters, aggregated_metrics
-    
+
+    # =====================================================
+    # AGGREGATE EVALUATION
+    # =====================================================
+
     def aggregate_evaluate(
         self,
         server_round: int,
         results: List[Tuple],
         failures: List[Tuple],
     ):
-        """
-        Aggregate evaluation metrics from clients.
-        """
-        
-        print(f"[EVALUATION Round {server_round}]")
-        print(f"  Clients evaluated: {len(results)}")
-        
+
+        print("\n[EVALUATION]")
+
+        print(f"Clients evaluated: {len(results)}")
+
         if failures:
-            print(f"  Clients failed: {len(failures)}")
-        
+
+            print(f"Clients failed: {len(failures)}")
+
         aggregated_loss, aggregated_metrics = super().aggregate_evaluate(
             server_round,
             results,
             failures
         )
-        
+
+        # -------------------------------------------------
+        # LOG LOSS
+        # -------------------------------------------------
+
+        if aggregated_loss is not None:
+
+            print(f"\nGlobal Loss: {aggregated_loss:.4f}")
+
+            mlflow.log_metric(
+                "global_loss",
+                aggregated_loss,
+                step=server_round
+            )
+
+        # -------------------------------------------------
+        # LOG METRICS
+        # -------------------------------------------------
+
         if aggregated_metrics:
-            print(f"  Global Loss: {aggregated_loss:.4f}")
+
+            print("\n[GLOBAL METRICS]")
+
             for key, value in aggregated_metrics.items():
-                print(f"  {key}: {value}")
-        
+
+                print(f"{key}: {value:.4f}")
+
+                mlflow.log_metric(
+                    key,
+                    value,
+                    step=server_round
+                )
+
         return aggregated_loss, aggregated_metrics
 
 
+# =========================================================
+# MAIN SERVER FUNCTION
+# =========================================================
+
 def main():
-    """Start Flower Federated Learning Server"""
-    
+
     print("\n" + "=" * 70)
-    print("FEDERATED LEARNING SERVER")
+
+    print("FEDERATED LEARNING SERVER WITH MLFLOW")
+
     print("=" * 70)
-    
-    print("\n[Configuration]")
-    print(f"  Server Address: 0.0.0.0:8080")
-    print(f"  Federated Rounds: 5")
-    print(f"  Min Clients Required: 2")
-    print(f"  Input Feature Size: {INPUT_SIZE}")
-    print(f"  Model Architecture: [Linear({INPUT_SIZE}, 64) -> BatchNorm -> ReLU -> Dropout]")
-    print(f"                      [Linear(64, 32) -> BatchNorm -> ReLU -> Dropout]")
-    print(f"                      [Linear(32, 1) -> Sigmoid]")
-    
-    print("\n" + "=" * 70)
-    
-    # Define Federated Learning Strategy
+
+    print("\n[CONFIGURATION]")
+
+    print(f"Server Address      : 0.0.0.0:8080")
+
+    print(f"Federated Rounds    : {NUM_ROUNDS}")
+
+    print(f"Minimum Clients     : 2")
+
+    print(f"Input Feature Size  : {INPUT_SIZE}")
+
+    print(f"Model Architecture  : ModelA")
+
+    print("=" * 70)
+
+    # =====================================================
+    # MLFLOW SETUP
+    # =====================================================
+
+    print("\n[MLFLOW] Initializing experiment tracking...")
+
+    mlflow.set_experiment(
+        "Federated-Churn-Training"
+    )
+
+    mlflow.start_run()
+
+    # -----------------------------------------------------
+    # LOG PARAMETERS
+    # -----------------------------------------------------
+
+    mlflow.log_param(
+        "num_rounds",
+        NUM_ROUNDS
+    )
+
+    mlflow.log_param(
+        "input_size",
+        INPUT_SIZE
+    )
+
+    mlflow.log_param(
+        "min_clients",
+        2
+    )
+
+    mlflow.log_param(
+        "model",
+        "ModelA"
+    )
+
+    mlflow.log_param(
+        "optimizer",
+        "Adam"
+    )
+
+    mlflow.log_param(
+        "federated_strategy",
+        "FedAvg"
+    )
+
+    print("[MLFLOW] Tracking started!")
+
+    # =====================================================
+    # FEDERATED STRATEGY
+    # =====================================================
+
     strategy = FedAvgCustom(
-        # Use all available clients for training
+
         fraction_fit=1.0,
-        
-        # Evaluate on all available clients
+
         fraction_evaluate=1.0,
-        
-        # Minimum clients required for training
+
         min_fit_clients=2,
-        
-        # Minimum clients required for evaluation
+
         min_evaluate_clients=2,
-        
-        # Wait until at least 2 clients connect
+
         min_available_clients=2,
+
+        fit_metrics_aggregation_fn=weighted_average,
+
+        evaluate_metrics_aggregation_fn=weighted_average,
     )
-    
-    # Create server config
+
+    # =====================================================
+    # SERVER CONFIG
+    # =====================================================
+
     config = fl.server.ServerConfig(
-        num_rounds=5
+        num_rounds=NUM_ROUNDS
     )
-    
-    # Start Flower Server
+
+    # =====================================================
+    # START FLOWER SERVER
+    # =====================================================
+
     try:
-        print("\n[SERVER] Starting Flower server...\n")
-        
+
+        print("\n[SERVER] Starting Flower Server...\n")
+
         fl.server.start_server(
-            # 0.0.0.0 allows external Azure/public access
+
             server_address="0.0.0.0:8080",
-            
-            # Number of federated rounds
+
             config=config,
-            
+
             strategy=strategy,
-            
-            # Prevent gRPC message size issues with large models
+
             grpc_max_message_length=1024 * 1024 * 1024,
         )
-    
+
     except KeyboardInterrupt:
-        print("\n\n[SERVER] Interrupted by user")
-    
+
+        print("\n[SERVER] Interrupted by user")
+
     except Exception as e:
-        print(f"\n\n[ERROR] {type(e).__name__}: {e}")
+
+        print(f"\n[ERROR] {type(e).__name__}: {e}")
+
         import traceback
+
         traceback.print_exc()
-    
+
+    finally:
+
+        # =================================================
+        # SAVE FINAL MODEL TO MLFLOW
+        # =================================================
+
+        final_model_path = "models/final_model.pth"
+
+        if os.path.exists(final_model_path):
+
+            print("\n[MLFLOW] Uploading final model artifact...")
+
+            mlflow.log_artifact(final_model_path)
+
+        # =================================================
+        # END MLFLOW RUN
+        # =================================================
+
+        mlflow.end_run()
+
+        print("\n[MLFLOW] Run closed successfully")
+
     print("\n" + "=" * 70)
+
     print("FEDERATED LEARNING COMPLETED!")
-    print("Final model saved in: models/federated_latest.pth")
+
+    print(f"Final model saved at: {final_model_path}")
+
+    print("MLflow experiment logged successfully!")
+
     print("=" * 70 + "\n")
 
 
+# =========================================================
+# ENTRY POINT
+# =========================================================
+
 if __name__ == "__main__":
+
     main()
