@@ -1,7 +1,7 @@
 import os
 
 # =========================================================
-# FIX PYTORCH / OPENMP HANGS ON LINUX VM
+# FIX PYTORCH / OPENMP ISSUES
 # =========================================================
 
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -10,51 +10,41 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 print("1 - Starting imports")
 
-print("2 - os configured")
-
 from typing import List, Tuple
 
-print("3 - typing imported")
+print("2 - typing imported")
 
 import flwr as fl
 
-print("4 - flower imported")
+print("3 - flower imported")
 
 from flwr.server.strategy import FedAvg
 
-print("5 - FedAvg imported")
+print("4 - FedAvg imported")
 
 # =========================================================
 # MLFLOW
 # =========================================================
 
-print("6 - importing mlflow...")
+print("5 - importing mlflow...")
 
 import mlflow
 
-print("7 - mlflow imported")
+print("6 - mlflow imported")
 
 # =========================================================
 # AZURE ML
 # =========================================================
 
-print("8 - importing azure.ai.ml...")
+print("7 - importing azure.ai.ml...")
 
 from azure.ai.ml import MLClient
 
-print("9 - azure.ai.ml imported")
+print("8 - azure.ai.ml imported")
 
 from azure.identity import DefaultAzureCredential
 
-print("10 - azure identity imported")
-
-# =========================================================
-# LAZY IMPORT PLACEHOLDER
-# =========================================================
-
-save_global_model = None
-
-print("11 - lazy import configured")
+print("9 - azure identity imported")
 
 
 # =========================================================
@@ -79,6 +69,13 @@ NUM_ROUNDS = 5
 MIN_CLIENTS = 2
 
 INPUT_SIZE = 10
+
+
+# =========================================================
+# GLOBAL FINAL PARAMETERS
+# =========================================================
+
+LATEST_PARAMETERS = None
 
 
 # =========================================================
@@ -126,7 +123,7 @@ class FedAvgCustom(FedAvg):
         failures,
     ):
 
-        global save_global_model
+        global LATEST_PARAMETERS
 
         print("\n" + "=" * 70)
 
@@ -138,6 +135,10 @@ class FedAvgCustom(FedAvg):
 
         print(f"✗ Clients failed: {len(failures)}")
 
+        # =================================================
+        # FLOWER AGGREGATION
+        # =================================================
+
         aggregated_parameters, aggregated_metrics = (
             super().aggregate_fit(
                 server_round,
@@ -147,32 +148,14 @@ class FedAvgCustom(FedAvg):
         )
 
         # =================================================
-        # LAZY IMPORT
+        # STORE FINAL PARAMETERS
         # =================================================
 
-        if save_global_model is None:
+        LATEST_PARAMETERS = aggregated_parameters
 
-            print("\n[MODEL] Importing save_model...")
-
-            from save_model import save_global_model
-
-            print("[MODEL] save_model imported!")
-
-        # =================================================
-        # SAVE MODEL
-        # =================================================
-
-        if aggregated_parameters is not None:
-
-            print("[MODEL] Saving global model...")
-
-            save_global_model(
-                parameters=aggregated_parameters,
-                round_num=server_round,
-                input_size=INPUT_SIZE
-            )
-
-            print("[MODEL] Global model saved!")
+        print(
+            "\n[MODEL] Global parameters updated!"
+        )
 
         # =================================================
         # TRAIN METRICS
@@ -208,7 +191,7 @@ class FedAvgCustom(FedAvg):
         )
 
     # =====================================================
-    # AGGREGATE EVALUATE
+    # AGGREGATE EVALUATION
     # =====================================================
 
     def aggregate_evaluate(
@@ -506,33 +489,49 @@ def main():
         print("\n[SERVER] Cleaning up...")
 
         # =================================================
-        # LOG FINAL MODEL
+        # SAVE FINAL MODEL ONLY ONCE
         # =================================================
 
-        final_model_path = (
-            "models/federated_latest.pth"
-        )
+        try:
 
-        if os.path.exists(final_model_path):
+            global LATEST_PARAMETERS
 
-            try:
+            if LATEST_PARAMETERS is not None:
 
-                mlflow.log_artifact(
-                    final_model_path
+                print(
+                    "\n[FINAL MODEL] "
+                    "Importing save_model..."
+                )
+
+                from save_model import save_global_model
+
+                print(
+                    "[FINAL MODEL] "
+                    "Saving final global model..."
+                )
+
+                save_global_model(
+                    parameters=LATEST_PARAMETERS,
+                    round_num=NUM_ROUNDS,
+                    input_size=INPUT_SIZE
                 )
 
                 print(
-                    "[MLFLOW] Final model uploaded!"
+                    "[FINAL MODEL] Saved successfully!"
                 )
 
-            except Exception as e:
+        except Exception as e:
 
-                print(
-                    f"[MLFLOW ARTIFACT ERROR] {e}"
-                )
+            print(
+                f"\n[FINAL MODEL ERROR] {e}"
+            )
+
+            import traceback
+
+            traceback.print_exc()
 
         # =================================================
-        # END RUN
+        # END MLFLOW RUN
         # =================================================
 
         try:
