@@ -1,87 +1,240 @@
 """
 save_model.py
 =============
-Utility to save aggregated federated model from Flower parameters to PyTorch .pth
+Utility functions for:
+- Saving aggregated federated global model
+- Loading saved checkpoints
 """
 
 import os
-import torch
 from collections import OrderedDict
+
+import torch
+
 from flwr.common import parameters_to_ndarrays
+
 from model import ModelA
 
 
-def save_global_model(parameters, round_num: int, input_size: int, output_dir: str = "models"):
+# =========================================================
+# SAVE GLOBAL MODEL
+# =========================================================
+
+def save_global_model(
+    parameters,
+    round_num: int,
+    input_size: int,
+    output_dir: str = "models",
+):
     """
-    Convert Flower aggregated parameters into a PyTorch model and save as .pth checkpoint.
-    
+    Convert Flower aggregated parameters into a
+    PyTorch ModelA checkpoint.
+
     Args:
-        parameters: Aggregated Flower parameters
-        round_num: Current federated round number
-        input_size: Number of input features
-        output_dir: Directory to save models (default: "models")
+        parameters:
+            Flower aggregated parameters
+
+        round_num:
+            Current federated round number
+
+        input_size:
+            Number of input features
+
+        output_dir:
+            Directory to save checkpoints
     """
-    
-    # Create models directory if not exists
+
+    print("\n[SAVE_MODEL] Creating output directory...")
+
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Convert Flower parameters -> NumPy arrays
-    ndarrays = parameters_to_ndarrays(parameters)
-    
-    # Initialize model with default architecture
+
+    print("[SAVE_MODEL] Output directory ready!")
+
+    # =====================================================
+    # CONVERT FLOWER PARAMETERS
+    # =====================================================
+
+    print("[SAVE_MODEL] Converting parameters...")
+
+    ndarrays = parameters_to_ndarrays(
+        parameters
+    )
+
+    print(
+        f"[SAVE_MODEL] "
+        f"{len(ndarrays)} tensors received!"
+    )
+
+    # =====================================================
+    # INITIALIZE MODEL
+    # =====================================================
+
+    print("[SAVE_MODEL] Initializing ModelA...")
+
     model = ModelA(
         input_dim=input_size,
         hidden_dims=[64, 32],
         dropout=0.3
     )
-    
-    # Map weights to model state_dict
-    params_dict = zip(model.state_dict().keys(), ndarrays)
-    
+
+    print("[SAVE_MODEL] Model initialized!")
+
+    # =====================================================
+    # MAP PARAMETERS
+    # =====================================================
+
+    print("[SAVE_MODEL] Mapping tensors...")
+
+    params_dict = zip(
+        model.state_dict().keys(),
+        ndarrays
+    )
+
     state_dict = OrderedDict({
-        k: torch.tensor(v)
-        for k, v in params_dict
+
+        key: torch.tensor(value)
+
+        for key, value in params_dict
     })
-    
-    # Load weights into model
-    model.load_state_dict(state_dict, strict=True)
-    
-    # Save round checkpoint
-    round_path = os.path.join(output_dir, f"federated_round_{round_num}.pth")
-    torch.save(model.state_dict(), round_path)
-    print(f"[MODEL SAVED] {round_path}")
-    
-    # Save as latest model
-    latest_path = os.path.join(output_dir, "federated_latest.pth")
-    torch.save(model.state_dict(), latest_path)
-    print(f"[MODEL SAVED] {latest_path} (latest)")
+
+    print("[SAVE_MODEL] State dict created!")
+
+    # =====================================================
+    # LOAD WEIGHTS
+    # =====================================================
+
+    print("[SAVE_MODEL] Loading weights...")
+
+    model.load_state_dict(
+        state_dict,
+        strict=True
+    )
+
+    print("[SAVE_MODEL] Weights loaded!")
+
+    # =====================================================
+    # SAVE ROUND CHECKPOINT
+    # =====================================================
+
+    round_model_path = os.path.join(
+        output_dir,
+        f"federated_round_{round_num}.pth"
+    )
+
+    print(
+        f"[SAVE_MODEL] Saving:"
+        f" {round_model_path}"
+    )
+
+    torch.save(
+        model.state_dict(),
+        round_model_path
+    )
+
+    print(
+        f"[MODEL SAVED] "
+        f"{round_model_path}"
+    )
+
+    # =====================================================
+    # SAVE LATEST MODEL
+    # =====================================================
+
+    latest_model_path = os.path.join(
+        output_dir,
+        "federated_latest.pth"
+    )
+
+    print(
+        f"[SAVE_MODEL] Saving latest:"
+        f" {latest_model_path}"
+    )
+
+    torch.save(
+        model.state_dict(),
+        latest_model_path
+    )
+
+    print(
+        f"[MODEL SAVED] "
+        f"{latest_model_path}"
+    )
+
+    print("[SAVE_MODEL] Completed successfully!")
 
 
-def load_model(model_path: str, input_size: int, hidden_dims: list = None, dropout: float = 0.3):
+# =========================================================
+# LOAD MODEL
+# =========================================================
+
+def load_model(
+    model_path: str,
+    input_size: int,
+    hidden_dims: list = None,
+    dropout: float = 0.3,
+):
     """
-    Load a saved ModelA from checkpoint.
-    
+    Load ModelA checkpoint.
+
     Args:
-        model_path: Path to .pth file
-        input_size: Number of input features
-        hidden_dims: List of hidden layer dimensions (default: [64, 32])
-        dropout: Dropout probability (default: 0.3)
-    
+        model_path:
+            Path to .pth file
+
+        input_size:
+            Number of input features
+
+        hidden_dims:
+            Hidden layer sizes
+
+        dropout:
+            Dropout probability
+
     Returns:
-        ModelA instance with loaded weights
+        Loaded ModelA instance
     """
-    
+
+    print("\n[LOAD_MODEL] Loading model...")
+
     if hidden_dims is None:
+
         hidden_dims = [64, 32]
-    
+
+    # =====================================================
+    # INITIALIZE MODEL
+    # =====================================================
+
     model = ModelA(
         input_dim=input_size,
         hidden_dims=hidden_dims,
         dropout=dropout
     )
-    
-    state_dict = torch.load(model_path, map_location="cpu")
-    model.load_state_dict(state_dict, strict=True)
-    
-    print(f"[MODEL LOADED] {model_path}")
+
+    print("[LOAD_MODEL] Model initialized!")
+
+    # =====================================================
+    # LOAD STATE DICT
+    # =====================================================
+
+    print(
+        f"[LOAD_MODEL] Reading:"
+        f" {model_path}"
+    )
+
+    state_dict = torch.load(
+        model_path,
+        map_location="cpu"
+    )
+
+    print("[LOAD_MODEL] State dict loaded!")
+
+    model.load_state_dict(
+        state_dict,
+        strict=True
+    )
+
+    print(
+        f"[MODEL LOADED] "
+        f"{model_path}"
+    )
+
     return model

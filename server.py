@@ -1,8 +1,8 @@
 """
 server.py
 =========
-Minimal Debug Version
-Flower + Azure MLflow Debuggable Server
+Federated Learning Server
+Flower + Azure MLflow + Lazy Model Saving
 """
 
 print("1 - Starting imports")
@@ -23,9 +23,9 @@ from flwr.server.strategy import FedAvg
 
 print("5 - FedAvg imported")
 
-# ---------------------------------------------------------
-# MLFLOW IMPORT
-# ---------------------------------------------------------
+# =========================================================
+# MLFLOW
+# =========================================================
 
 print("6 - importing mlflow...")
 
@@ -33,9 +33,9 @@ import mlflow
 
 print("7 - mlflow imported")
 
-# ---------------------------------------------------------
-# AZURE IMPORTS
-# ---------------------------------------------------------
+# =========================================================
+# AZURE ML
+# =========================================================
 
 print("8 - importing azure.ai.ml...")
 
@@ -47,9 +47,13 @@ from azure.identity import DefaultAzureCredential
 
 print("10 - azure identity imported")
 
-from save_model import save_global_model
+# =========================================================
+# LAZY IMPORT PLACEHOLDER
+# =========================================================
 
-print("11 - save_model imported")
+save_global_model = None
+
+print("11 - lazy import configured")
 
 
 # =========================================================
@@ -64,7 +68,7 @@ WORKSPACE_NAME = "flower-wsp"
 
 
 # =========================================================
-# FEDERATED CONFIG
+# FEDERATED LEARNING CONFIG
 # =========================================================
 
 SERVER_ADDRESS = "0.0.0.0:8080"
@@ -92,9 +96,9 @@ def weighted_average(metrics):
 
     aggregated = {}
 
-    keys = metrics[0][1].keys()
+    metric_keys = metrics[0][1].keys()
 
-    for key in keys:
+    for key in metric_keys:
 
         aggregated[key] = sum(
             num_examples * metric_dict[key]
@@ -105,10 +109,14 @@ def weighted_average(metrics):
 
 
 # =========================================================
-# CUSTOM STRATEGY
+# CUSTOM FEDAVG STRATEGY
 # =========================================================
 
 class FedAvgCustom(FedAvg):
+
+    # =====================================================
+    # AGGREGATE FIT
+    # =====================================================
 
     def aggregate_fit(
         self,
@@ -117,11 +125,17 @@ class FedAvgCustom(FedAvg):
         failures,
     ):
 
-        print("\n" + "=" * 60)
+        global save_global_model
 
-        print(f"ROUND {server_round}")
+        print("\n" + "=" * 70)
 
-        print("=" * 60)
+        print(f"FEDERATED ROUND {server_round}")
+
+        print("=" * 70)
+
+        print(f"✓ Clients completed: {len(results)}")
+
+        print(f"✗ Clients failed: {len(failures)}")
 
         aggregated_parameters, aggregated_metrics = (
             super().aggregate_fit(
@@ -131,6 +145,22 @@ class FedAvgCustom(FedAvg):
             )
         )
 
+        # =================================================
+        # LAZY IMPORT
+        # =================================================
+
+        if save_global_model is None:
+
+            print("\n[MODEL] Importing save_model...")
+
+            from save_model import save_global_model
+
+            print("[MODEL] save_model imported!")
+
+        # =================================================
+        # SAVE MODEL
+        # =================================================
+
         if aggregated_parameters is not None:
 
             print("[MODEL] Saving global model...")
@@ -138,10 +168,14 @@ class FedAvgCustom(FedAvg):
             save_global_model(
                 parameters=aggregated_parameters,
                 round_num=server_round,
-                input_dim=INPUT_SIZE
+                input_size=INPUT_SIZE
             )
 
-            print("[MODEL] Saved!")
+            print("[MODEL] Global model saved!")
+
+        # =================================================
+        # TRAIN METRICS
+        # =================================================
 
         if aggregated_metrics:
 
@@ -165,12 +199,16 @@ class FedAvgCustom(FedAvg):
                         f"[MLFLOW ERROR] {e}"
                     )
 
+        print("=" * 70)
+
         return (
             aggregated_parameters,
             aggregated_metrics
         )
 
-    # -----------------------------------------------------
+    # =====================================================
+    # AGGREGATE EVALUATE
+    # =====================================================
 
     def aggregate_evaluate(
         self,
@@ -189,10 +227,18 @@ class FedAvgCustom(FedAvg):
 
         print("\n[EVALUATION]")
 
+        print(f"Clients evaluated: {len(results)}")
+
+        print(f"Failures: {len(failures)}")
+
+        # =================================================
+        # LOSS
+        # =================================================
+
         if aggregated_loss is not None:
 
             print(
-                f"Global Loss:"
+                f"\nGlobal Loss:"
                 f" {aggregated_loss:.4f}"
             )
 
@@ -209,6 +255,10 @@ class FedAvgCustom(FedAvg):
                 print(
                     f"[MLFLOW ERROR] {e}"
                 )
+
+        # =================================================
+        # METRICS
+        # =================================================
 
         if aggregated_metrics:
 
@@ -248,21 +298,35 @@ def main():
 
     print("FEDERATED LEARNING SERVER")
 
+    print("Flower + Azure ML + MLflow")
+
+    print("=" * 70)
+
+    print("\n[CONFIGURATION]")
+
+    print(f"Server Address : {SERVER_ADDRESS}")
+
+    print(f"Federated Rounds : {NUM_ROUNDS}")
+
+    print(f"Minimum Clients : {MIN_CLIENTS}")
+
+    print(f"Input Size : {INPUT_SIZE}")
+
     print("=" * 70)
 
     # =====================================================
-    # AZURE CONNECTION
+    # CONNECT TO AZURE ML
     # =====================================================
 
     try:
 
-        print("\n[AZURE] Creating credential...")
+        print("\n[AZURE] Creating credentials...")
 
         credential = DefaultAzureCredential()
 
-        print("[AZURE] Credential created!")
+        print("[AZURE] Credentials created!")
 
-        print("[AZURE] Creating ML client...")
+        print("[AZURE] Connecting ML Client...")
 
         ml_client = MLClient(
             credential=credential,
@@ -271,7 +335,7 @@ def main():
             workspace_name=WORKSPACE_NAME,
         )
 
-        print("[AZURE] ML client created!")
+        print("[AZURE] ML Client connected!")
 
         print("[AZURE] Fetching workspace...")
 
@@ -281,17 +345,15 @@ def main():
 
         print("[AZURE] Workspace fetched!")
 
-        tracking_uri = (
-            workspace.mlflow_tracking_uri
-        )
+        tracking_uri = workspace.mlflow_tracking_uri
 
-        print("[MLFLOW] URI fetched!")
+        print("[MLFLOW] Tracking URI fetched!")
 
         print(tracking_uri)
 
-        # -------------------------------------------------
+        # =================================================
         # SET TRACKING URI
-        # -------------------------------------------------
+        # =================================================
 
         mlflow.set_tracking_uri(
             tracking_uri
@@ -312,15 +374,17 @@ def main():
         return
 
     # =====================================================
-    # EXPERIMENT
+    # SET EXPERIMENT
     # =====================================================
+
+    EXPERIMENT_NAME = "Federated-Churn-Training"
 
     try:
 
         print("\n[MLFLOW] Setting experiment...")
 
         mlflow.set_experiment(
-            "Federated-Churn-Training"
+            EXPERIMENT_NAME
         )
 
         print("[MLFLOW] Starting run...")
@@ -336,7 +400,7 @@ def main():
         print(e)
 
     # =====================================================
-    # LOG PARAMS
+    # LOG PARAMETERS
     # =====================================================
 
     try:
@@ -356,7 +420,17 @@ def main():
             INPUT_SIZE
         )
 
-        print("[MLFLOW] Params logged!")
+        mlflow.log_param(
+            "model",
+            "ModelA"
+        )
+
+        mlflow.log_param(
+            "strategy",
+            "FedAvg"
+        )
+
+        print("[MLFLOW] Parameters logged!")
 
     except Exception as e:
 
@@ -365,7 +439,7 @@ def main():
         )
 
     # =====================================================
-    # STRATEGY
+    # FEDAVG STRATEGY
     # =====================================================
 
     strategy = FedAvgCustom(
@@ -386,7 +460,7 @@ def main():
     )
 
     # =====================================================
-    # SERVER CONFIG
+    # FLOWER CONFIG
     # =====================================================
 
     config = fl.server.ServerConfig(
@@ -399,7 +473,7 @@ def main():
 
     try:
 
-        print("\n[FLOWER] Starting server...\n")
+        print("\n[FLOWER] Starting Flower server...\n")
 
         fl.server.start_server(
 
@@ -430,8 +504,12 @@ def main():
 
         print("\n[SERVER] Cleaning up...")
 
+        # =================================================
+        # LOG FINAL MODEL
+        # =================================================
+
         final_model_path = (
-            "models/final_model.pth"
+            "models/federated_latest.pth"
         )
 
         if os.path.exists(final_model_path):
@@ -452,6 +530,10 @@ def main():
                     f"[MLFLOW ARTIFACT ERROR] {e}"
                 )
 
+        # =================================================
+        # END RUN
+        # =================================================
+
         try:
 
             mlflow.end_run()
@@ -464,7 +546,11 @@ def main():
                 f"[MLFLOW END ERROR] {e}"
             )
 
-    print("\nSERVER FINISHED")
+    print("\n" + "=" * 70)
+
+    print("FEDERATED LEARNING COMPLETED!")
+
+    print("=" * 70)
 
 
 # =========================================================
