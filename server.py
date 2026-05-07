@@ -1,8 +1,8 @@
-import os
-
 # =========================================================
 # FIX PYTORCH / OPENMP ISSUES
 # =========================================================
+
+import os
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -605,6 +605,69 @@ def main():
                 print(
                     "[FINAL MODEL] Saved successfully!"
                 )
+
+                # =========================================
+                # UPLOAD MODEL
+                # =========================================
+
+                try:
+
+                    print("\n" + "=" * 70)
+
+                    print("[UPLOAD] Starting model upload...")
+
+                    print("=" * 70)
+
+                    from upload_model import upload_model
+
+                    registered_model = upload_model()
+
+                    print(
+                        f"[UPLOAD] Model uploaded successfully!"
+                    )
+
+                    print(
+                        f"[UPLOAD] Model Version:"
+                        f" {registered_model.version}"
+                    )
+
+                except Exception as e:
+
+                    print(
+                        f"\n[UPLOAD ERROR] {e}"
+                    )
+
+                    import traceback
+
+                    traceback.print_exc()
+
+                # =========================================
+                # DEPLOY MODEL
+                # =========================================
+
+                try:
+
+                    print("\n" + "=" * 70)
+
+                    print("[DEPLOYMENT] Starting deployment...")
+
+                    print("=" * 70)
+
+                    import deploy_model
+
+                    print(
+                        "[DEPLOYMENT] Deployment completed!"
+                    )
+
+                except Exception as e:
+
+                    print(
+                        f"\n[DEPLOYMENT ERROR] {e}"
+                    )
+
+                    import traceback
+
+                    traceback.print_exc()
 
         except Exception as e:
 
